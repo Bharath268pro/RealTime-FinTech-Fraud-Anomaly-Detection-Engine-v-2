@@ -298,16 +298,15 @@ class InteractiveFraudDetectionSystem:
             except ValueError:
                 print("Please enter a valid integer for age.")
         
-        while True:
-            phone_input = int(input("Enter your phone  number:"))
-            try:
-                if len(phone_input) == 10:
-                    phone = int(phone_input)
-                break
-            except :
-                print("Please Enter a valid input")
 
-        phone    = input("Phone: ").strip()
+        # Phone input with validation
+        while True:
+            phone_input = input("Enter your phone number: ").strip()
+            if phone_input.isdigit() and len(phone_input) == 10:
+                phone = phone_input
+                break
+            else:
+                print("Please enter a valid 10-digit phone number.")
 
         if user_id in self.user_profiles:
             print("User already exists.")
