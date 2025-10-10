@@ -518,7 +518,7 @@ class InteractiveFraudDetectionSystem:
         for sender, receivers in self.transaction_graph.items():
             if receivers:
                 # V is the sender, E is the list of receivers (Adjacency List structure)
-                print(f"💰 {sender} → {', '.join(receivers)}")
+                print(f" {sender} → {', '.join(receivers)}")
 
     def process_review_queue(self):
         '''FIFO fraud case processing using queue.
@@ -534,7 +534,7 @@ class InteractiveFraudDetectionSystem:
             
             user = self.user_profiles.get(uid)
             if user:
-                print(f"🔍 Reviewing Case ID: {uid}")
+                print(f" Reviewing Case ID: {uid}")
                 print(f"  Risk Score: {user.fraud_score:.3f}, Reason: {user.flag_reason}")
                 
                 action = input("  [A]pproved (Clear Flag) or [D]eclined (Keep Flag)? [A/D]: ").lower().strip()
