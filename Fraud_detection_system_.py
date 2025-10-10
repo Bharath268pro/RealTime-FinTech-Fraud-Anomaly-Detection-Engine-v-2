@@ -252,7 +252,7 @@ class InteractiveFraudDetectionSystem:
         
         # Check if this transaction hash exists for this user
         if tx_hash in self.transaction_log[user_id]:
-            print("⚠️ Duplicate transaction detected!")
+            print("Duplicate transaction detected!")
         else:
             self.transaction_log[user_id].append(tx_hash)
 
@@ -332,11 +332,11 @@ class InteractiveFraudDetectionSystem:
                 print("Please enter a valid 10-digit phone number.")
 
         if user_id in self.user_profiles:
-            print("⚠️ User already exists.")
+            print(" User already exists.")
             return user_id
 
         self.user_profiles[user_id] = UserProfile(user_id, name, email, phone, address, age)
-        print(f"✅ Created profile for {name} ({user_id})")
+        print(f" Created profile for {name} ({user_id})")
         return user_id
 
     def process_transaction(self, user_id):
@@ -366,9 +366,9 @@ class InteractiveFraudDetectionSystem:
         print(f"Transaction: ${amount} in {location} [{tx_type}]")
         
         if result['is_fraud']:
-            print(f"Result: 🚨 FRAUD")
+            print(f"Result:  FRAUD")
         else:
-            print(f"Result: ✅ SAFE")
+            print(f"Result:  SAFE")
         
         print(f"Risk Score: {result['risk_score']:.3f}")
         print(f"Velocity: {result['velocity_score']:.2f}, Deviation: {result['amount_deviation']:.2f}")
@@ -469,7 +469,7 @@ class InteractiveFraudDetectionSystem:
         print("\n=== Review Queue ===")
         while self.review_queue:
             uid = self.review_queue.popleft()
-            print(f"🔎 Reviewing {uid}... done ✓")
+            print(f"Reviewing {uid}... done ✓")
 
 # -------------------------- Main Menu --------------------------
 def main():
@@ -491,11 +491,11 @@ def main():
             system.create_user()
         elif choice == "2":
             if not system.user_profiles:
-                print("⚠️ No users found. Create one first!")
+                print(" No users found. Create one first!")
                 continue
             uid = input("Enter User ID: ").strip()
             if uid not in system.user_profiles:
-                print("❌ Invalid User ID!")
+                print(" Invalid User ID!")
                 continue
             system.process_transaction(uid)
         elif choice == "3":
