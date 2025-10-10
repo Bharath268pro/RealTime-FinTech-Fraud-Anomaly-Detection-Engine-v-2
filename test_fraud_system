@@ -1,0 +1,184 @@
+# test_fraud_system.py
+
+import random
+import time
+import hashlib
+import heapq
+import bisect
+from collections import deque, defaultdict
+# Import all your classes from the main project file.
+# ASSUMING your file is named 'Fraud_detection_system_v2.py' (as in the previous prompt)
+# Change this line if your file is named differently (e.g., Fraud_detection_system_.py)
+from Fraud_detection_system_ import UserProfile, InteractiveFraudDetectionSystem 
+# If you face an import error, you might need to copy all class definitions 
+# into this file or ensure proper module importing.
+
+
+# --- METRICS CALCULATION (Same as previous step) ---
+
+def calculate_metrics(results):
+    """Calculates Precision, Recall, and F1-Score from batch test results."""
+    
+    TP, FP, FN, TN = 0, 0, 0, 0
+    
+    for res in results:
+        label = res['is_fraud_label']
+        prediction = res['is_fraud_predicted']
+        
+        if label and prediction:
+            TP += 1
+        elif not label and prediction:
+            FP += 1
+        elif label and not prediction:
+            FN += 1
+        elif not label and not prediction:
+            TN += 1
+
+    total = TP + FP + FN + TN
+
+    # Handle division by zero for metrics
+    accuracy = (TP + TN) / total if total > 0 else 0
+    precision = TP / (TP + FP) if (TP + FP) > 0 else 0
+    recall = TP / (TP + FN) if (TP + FN) > 0 else 0
+    
+    if (precision + recall) > 0:
+        f1_score = 2 * (precision * recall) / (precision + recall)
+    else:
+        f1_score = 0
+
+    # Output Report
+    actual_fraud_count = TP + FN
+    fraud_rate = actual_fraud_count / total * 100
+
+    print("\n" + "="*50)
+    print("      FRAUD DETECTION PERFORMANCE REPORT")
+    print("="*50)
+    print(f"Total Transactions: {total}")
+    print(f"Actual Fraud Cases: {actual_fraud_count} ({fraud_rate:.2f}%)")
+    print(f"Model Predictions:  {TP + FP} flagged as fraud")
+    print("-" * 50)
+    print("--- CONFUSION MATRIX ---")
+    print(f"True Positives (TP): {TP} (Fraud caught)")
+    print(f"False Positives (FP): {FP} (Legit blocked)")
+    print(f"False Negatives (FN): {FN} (Fraud missed)")
+    print(f"True Negatives (TN): {TN} (Legit safe)")
+    print("-" * 50)
+    print("--- KEY METRICS ---")
+    print(f"Accuracy (misleading): {accuracy:.4f}")
+    print(f"**Recall (Catch Rate):** {recall:.4f}")
+    print(f"**Precision (Flag Quality):** {precision:.4f}")
+    print(f"**F1-Score (Balance):** {f1_score:.4f}")
+    print("="*50 + "\n")
+
+    return {'TP': TP, 'FP': FP, 'FN': FN, 'TN': TN, 'Recall': recall, 'Precision': precision, 'F1': f1_score}
+
+
+# --- DATA GENERATION (Slightly modified to reflect the separation) ---
+
+def generate_synthetic_data(num_users=100, num_transactions=10000):
+    """Generates synthetic users and transactions with ground truth labels."""
+    users = []
+    
+    # Create Users
+    for i in range(num_users):
+        uid = f"U{i:03d}"
+        # Only instantiate UserProfile here, details are minimal for test speed
+        user = UserProfile(user_id=uid) 
+        users.append(user)
+
+    transactions = []
+    base_fraud_rate = 0.02
+    
+    # Identify a few "fraudsters" 
+    fraudsters = [users[i] for i in random.sample(range(num_users), 5)] 
+    
+    for i in range(num_transactions):
+        user = random.choice(users)
+        
+        is_fraud_label = False
+        
+        # Higher chance of fraud for designated fraudsters
+        if user in fraudsters and random.random() < (base_fraud_rate * 3):
+            is_fraud_label = True
+        elif random.random() < base_fraud_rate:
+            is_fraud_label = True
+        
+        # Transaction details
+        amount = random.randint(10, 50000)
+        location = random.choice(["NYC", "LA", "MIA", "LON", "PAR"])
+        tx_type = random.choice(['purchase', 'withdrawal', 'transfer', 'deposit'])
+        
+        # Time simulation
+        timestamp = time.time() + i * random.uniform(0.1, 5) 
+
+        transactions.append({
+            'user_id': user.user_id,
+            'amount': amount,
+            'location': location,
+            'tx_type': tx_type,
+            'timestamp': timestamp,
+            'is_fraud_label': is_fraud_label # Ground Truth
+        })
+
+    return users, transactions
+
+
+# --- BATCH RUNNER (Core Testing Logic) ---
+
+def run_batch_test(num_transactions=10000):
+    """Initializes system and runs all transactions in batch."""
+    print("Initializing Fraud Detection System...")
+    # Initialize your system class
+    system = InteractiveFraudDetectionSystem()
+    
+    users_data, transactions = generate_synthetic_data(num_transactions=num_transactions)
+    
+    # Populate system's user_profiles hash table
+    for user in users_data:
+        system.user_profiles[user.user_id] = user
+        
+    print(f"System ready. Processing {num_transactions} transactions in batch mode...")
+    
+    test_results = []
+    start_time = time.time()
+    
+    # Process Transactions in Batch
+    for i, tx in enumerate(transactions):
+        # Quick check to ensure the user exists (it should, as we created them)
+        if tx['user_id'] not in system.user_profiles:
+            continue
+            
+        user = system.user_profiles[tx['user_id']]
+        
+        # 1. Update User Profile with the transaction (O(1) logic)
+        user.add_transaction(tx['amount'], tx['location'], tx['tx_type'], tx['timestamp'])
+
+        # 2. Create the Transaction Code for Pattern Matching
+        amount_in_thousands = int(tx['amount'] // 1000)
+        code = f"{tx['tx_type'][0]}{amount_in_thousands}"
+        system.recent_transactions.append(code)
+        
+        # 3. Run the Core Fraud Detection Logic (O(n) due to deviation check)
+        result = system.check_fraud(user, code)
+        
+        # 4. Update DSA structures (Heap, Binary Search List)
+        user.record_risk(user.fraud_score)
+        system.update_risk_heap(user) 
+
+        # 5. Record result for metric calculation
+        test_results.append({
+            'is_fraud_label': tx['is_fraud_label'],
+            'is_fraud_predicted': result['is_fraud'],
+            'risk_score': result['risk_score']
+        })
+
+    end_time = time.time()
+    
+    print(f"\nBatch processing complete in {end_time - start_time:.2f} seconds.")
+    
+    # 6. Calculate and Report Final Metrics
+    calculate_metrics(test_results)
+    
+# Execute the test
+if __name__ == "__main__":
+    run_batch_test(num_transactions=10000)

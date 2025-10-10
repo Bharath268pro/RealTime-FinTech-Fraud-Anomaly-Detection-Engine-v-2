@@ -219,14 +219,14 @@ class InteractiveFraudDetectionSystem:
     - Queue for review management'''
     def __init__(self, window_size=5, bloom_size=1000):
         # --- Core DSA Structures ---
-        self.user_profiles = {}                     # Hash Table (O(1))
+        self.user_profiles = {}                       # Hash Table (O(1))
         self.recent_transactions = deque(maxlen=window_size)
         self.fraud_trie = Trie()
         self.fraud_bloom = BloomFilter(size=bloom_size)
-        self.transaction_log = defaultdict(list)     # For duplicate detection (O(1))
-        self.high_risk_heap = []                     # Max-Heap for risky users (O(log n))
-        self.transaction_graph = defaultdict(list)   # Graph adjacency list (O(1))
-        self.review_queue = deque()                  # Queue for fraud cases (O(1))
+        self.transaction_log = defaultdict(list)      # For duplicate detection (O(1))
+        self.high_risk_heap = []                      # Max-Heap for risky users (O(log n))
+        self.transaction_graph = defaultdict(list)    # Graph adjacency list (O(1))
+        self.review_queue = deque()                   # Queue for fraud cases (O(1))
 
         # --- Fraud Patterns ---
         self.fraud_patterns = ["p5p5p5", "w10w10", "p1p1p1p1", "p3p3p3p3", "w5w5w5", "t1t1t1"]
@@ -259,13 +259,20 @@ class InteractiveFraudDetectionSystem:
     def record_transfer(self, sender_id, receiver_id):
         '''Records money transfer as directed graph edge.
         Time Complexity: O(1)'''
-        self.transaction_graph[sender_id].append(receiver_id)
+        # Check if edge already exists to prevent excessive graph growth
+        if receiver_id not in self.transaction_graph[sender_id]:
+            self.transaction_graph[sender_id].append(receiver_id)
+            print(f" Recorded transfer: {sender_id} -> {receiver_id}")
+        else:
+            print(f" Edge already exists: {sender_id} -> {receiver_id}")
 
     def update_risk_heap(self, user):
         '''Push user into max-heap by fraud score.
         Time Complexity: O(log n)'''
         # Use negative score for max-heap behavior
         heap_entry = (-user.fraud_score, user.user_id)
+        # NOTE: A more robust system would re-sort or remove stale entries, 
+        # but for demonstration, we only push and trim.
         heapq.heappush(self.high_risk_heap, heap_entry)
         
         # Keep only top 10 risky users
@@ -275,9 +282,9 @@ class InteractiveFraudDetectionSystem:
     def add_to_review_queue(self, user):
         '''Adds flagged user to review queue (FIFO).
         Time Complexity: O(1)'''
-        if user.is_flagged:
+        if user.is_flagged and user.user_id not in self.review_queue: # Check if already in queue
             self.review_queue.append(user.user_id)
-            print(f"🕵️ Added {user.user_id} to review queue.")
+            print(f" Added {user.user_id} to review queue. Reason: {user.flag_reason}")
     
     # -------------------------- Fraud Detection Logic --------------------------
     def create_user(self):
@@ -344,15 +351,46 @@ class InteractiveFraudDetectionSystem:
         Time Complexity: O(n) overall (due to deviation check)'''
         user = self.user_profiles[user_id]
         print("\n--- Enter Transaction Details ---")
-        amount = float(input("Transaction Amount: "))
+        
+        # Amount input with validation
+        while True:
+            try:
+                amount = float(input("Transaction Amount: "))
+                if amount > 0:
+                    break
+                else:
+                    print("Amount must be positive.")
+            except ValueError:
+                print("Invalid amount. Please enter a number.")
+                
         location = input("Location: ").strip()
         print("Type: [1] Purchase [2] Withdrawal [3] Transfer [4] Deposit")
         tx_type_input = input("Transaction Type (1-4): ").strip()
         tx_types = { '1': 'purchase', '2': 'withdrawal', '3': 'transfer', '4': 'deposit' }
         tx_type = tx_types.get(tx_type_input, 'purchase')
 
+        # Record the transaction for the user
         user.add_transaction(amount, location, tx_type)
         self.log_transaction(user_id, amount, location, tx_type)
+        
+        # --- FIX FOR GRAPH: Record transfer and potential deposit ---
+        if tx_type == 'transfer':
+            while True:
+                receiver_id = input(f"Enter Receiver User ID for {user_id}'s transfer: ").strip()
+                if receiver_id and receiver_id != user_id:
+                    break
+                print("Invalid or same User ID. Please enter a valid receiver ID.")
+                
+            # Populate the Graph (Adjacency List)
+            self.record_transfer(user_id, receiver_id) 
+            
+            # Record the other side of the transaction (deposit) for the receiver
+            if receiver_id in self.user_profiles:
+                receiver_user = self.user_profiles[receiver_id]
+                receiver_user.add_transaction(amount, location, 'deposit')
+            else:
+                print(f"Warning: Receiver ID {receiver_id} not found in system. Deposit not recorded.")
+        # -------------------------------------------------------------
         
         # Create transaction code (first letter + amount in thousands)
         amount_in_thousands = int(amount // 1000)
@@ -366,12 +404,12 @@ class InteractiveFraudDetectionSystem:
         print(f"Transaction: ${amount} in {location} [{tx_type}]")
         
         if result['is_fraud']:
-            print(f"Result:  FRAUD")
+            print(f" Result: HIGH-RISK FRAUD ALERT")
         else:
-            print(f"Result:  SAFE")
+            print(f" Result: SAFE")
         
-        print(f"Risk Score: {result['risk_score']:.3f}")
-        print(f"Velocity: {result['velocity_score']:.2f}, Deviation: {result['amount_deviation']:.2f}")
+        print(f"Risk Score: {result['risk_score']:.3f} (Percentile: {user.get_percentile_rank(user.fraud_score):.2f}%)")
+        print(f"Velocity: {result['velocity_score']:.2f}, Deviation: {result['amount_deviation']:.2f} $\sigma$")
 
         self.update_risk_heap(user)
         self.add_to_review_queue(user)
@@ -383,13 +421,13 @@ class InteractiveFraudDetectionSystem:
         is_pattern_fraud = False
         flag_reason = ""
 
-        # Pattern analysis - check last 3 transactions
+        # Pattern analysis - check last 3 transactions (Sliding Window)
         if len(self.recent_transactions) >= 3:
             # Get last 3 transaction codes
             last_three = list(self.recent_transactions)[-3:]
             pattern_seq = "".join(last_three)
             
-            # Check if pattern is fraudulent
+            # Check if pattern is fraudulent using Bloom Filter (O(k)) and Trie (O(m))
             bloom_check = self.fraud_bloom.check(pattern_seq)
             trie_check = self.fraud_trie.search(pattern_seq)
             
@@ -403,7 +441,7 @@ class InteractiveFraudDetectionSystem:
 
         # Age-based risk
         if user.account_age_days < 1:
-            age_risk = 0.8
+            age_risk = 0.8 # New accounts are riskier
         else:
             age_risk = 0.3
 
@@ -435,8 +473,10 @@ class InteractiveFraudDetectionSystem:
         
         if flag_reason:
             user.flag_reason = flag_reason
+        elif is_fraud:
+            user.flag_reason = f"High risk score: {risk_score:.2f} (V:{v_risk:.2f}, D:{d_risk:.2f})"
         else:
-            user.flag_reason = f"High risk score: {risk_score:.2f}"
+            user.flag_reason = ""
         
         return {
             'is_fraud': is_fraud,
@@ -449,40 +489,85 @@ class InteractiveFraudDetectionSystem:
     def show_top_risky_users(self):
         '''Displays top risky users from heap.
         Time Complexity: O(n log n)'''
-        print("\n=== Top Risky Users ===")
+        print("\n=== Top Risky Users (Max-Heap) ===")
+        
+        # Create a temporary sorted list (O(n log n) or O(k log n) if only top k are needed)
+        # Using a shallow copy for sorting without modifying the original heap
         sorted_users = sorted(self.high_risk_heap, reverse=True)
         
+        if not sorted_users:
+            print("No high-risk users in the heap.")
+            return
+
         for score, uid in sorted_users:
             actual_score = -score  # Convert back from negative
-            print(f"User ID: {uid}, Fraud Score: {actual_score:.3f}")
+            user = self.user_profiles.get(uid)
+            if user:
+                print(f" User ID: {uid} | Score: {actual_score:.3f} | Flagged: {user.is_flagged} | Reason: {user.flag_reason}")
+            else:
+                print(f" User ID: {uid} | Score: {actual_score:.3f} | [User Profile Not Found]")
 
     def show_transaction_network(self):
         '''Displays user-to-user transaction graph.
         Time Complexity: O(V + E)'''
-        print("\n=== Transaction Network Graph ===")
-        for user, connections in self.transaction_graph.items():
-            print(f"{user} → {connections}")
+        print("\n=== Transaction Network Graph (Transfers) ===")
+        if not self.transaction_graph:
+            print("No transfers recorded yet.")
+            return
+            
+        for sender, receivers in self.transaction_graph.items():
+            if receivers:
+                # V is the sender, E is the list of receivers (Adjacency List structure)
+                print(f"💰 {sender} → {', '.join(receivers)}")
 
     def process_review_queue(self):
         '''FIFO fraud case processing using queue.
         Time Complexity: O(n)'''
-        print("\n=== Review Queue ===")
+        print("\n=== Review Queue (Processing FIFO) ===")
+        if not self.review_queue:
+            print("Queue is empty. No cases for review.")
+            return
+            
+        # FIX: Process one item at a time for interactive feel, or loop as intended
         while self.review_queue:
             uid = self.review_queue.popleft()
-            print(f"Reviewing {uid}... done ✓")
+            
+            user = self.user_profiles.get(uid)
+            if user:
+                print(f"🔍 Reviewing Case ID: {uid}")
+                print(f"  Risk Score: {user.fraud_score:.3f}, Reason: {user.flag_reason}")
+                
+                action = input("  [A]pproved (Clear Flag) or [D]eclined (Keep Flag)? [A/D]: ").lower().strip()
+                
+                if action == 'a':
+                    user.is_flagged = False
+                    user.flag_reason = "Reviewed and Approved/Cleared."
+                    print(f"  User {uid}'s flag **CLEARED**.")
+                elif action == 'd':
+                    print(f"  User {uid}'s flag **KEPT** for further action.")
+                else:
+                    print("  Invalid action. Flag remains for next review cycle.")
+            else:
+                print(f"Reviewing {uid}... User not found. Skipped.")
 
 # -------------------------- Main Menu --------------------------
 def main():
     print("\n=== FRAUD DETECTION SYSTEM (DSA Edition) ===")
     system = InteractiveFraudDetectionSystem()
     
+    # Pre-create a couple of users for easier testing
+    system.user_profiles['U101'] = UserProfile('U101', 'Alice', age=30)
+    system.user_profiles['U102'] = UserProfile('U102', 'Bob', age=45)
+    system.user_profiles['U103'] = UserProfile('U103', 'Charlie', age=22)
+    print("Pre-created users: U101 (Alice), U102 (Bob), U103 (Charlie)")
+    
     while True:
         print("\nMenu:")
         print("1. Create new user")
-        print("2. Process transaction")
-        print("3. Show top risky users")
-        print("4. Show transaction network")
-        print("5. Review fraud queue")
+        print("2. Process transaction (Test Fraud Rules)")
+        print("3. Show top risky users (Heap)")
+        print("4. Show transaction network (Graph)")
+        print("5. Review fraud queue (Queue)")
         print("6. Exit")
         
         choice = input("Select (1-6): ").strip()
