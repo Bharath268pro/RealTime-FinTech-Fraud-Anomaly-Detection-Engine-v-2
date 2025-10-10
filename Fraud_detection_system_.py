@@ -29,33 +29,54 @@ from collections import deque, defaultdict
 class BloomFilter:
     '''Used to quickly check if a transaction pattern that may have appeared before.
     Time Complexity: add() = O(k), check() = O(k)'''
-    def _init_(self, size=1000, hash_count=3):
+    def __init__(self, size=1000, hash_count=3):
         self.size = size
         self.hash_count = hash_count
-        self.bit_array = [0]*size
+        self.bit_array = [0] * size
         self.items_added = 0
 
     def _hashes(self, item):
-        return [int(hashlib.md5((str(item)+str(i)).encode()).hexdigest(), 16) % self.size for i in range(self.hash_count)]
+        # Generate multiple hash values for the item
+        hash_values = []
+        for i in range(self.hash_count):
+            # Combine item with index i to create unique hash
+            combined_string = str(item) + str(i)
+            encoded_string = combined_string.encode()
+            
+            # Generate MD5 hash
+            hash_object = hashlib.md5(encoded_string)
+            hex_digest = hash_object.hexdigest()
+            
+            # Convert hex to integer and get position in bit array
+            hash_int = int(hex_digest, 16)
+            position = hash_int % self.size
+            hash_values.append(position)
+        
+        return hash_values
 
     def add(self, item):
-        for h in self._hashes(item):
-            self.bit_array[h] = 1
+        hash_positions = self._hashes(item)
+        for position in hash_positions:
+            self.bit_array[position] = 1
         self.items_added += 1
 
     def check(self, item):
-        return all(self.bit_array[h] for h in self._hashes(item))
+        hash_positions = self._hashes(item)
+        for position in hash_positions:
+            if self.bit_array[position] == 0:
+                return False
+        return True
 
 # --- TRIE (Prefix Tree for Fraud Patterns) ---
 class TrieNode:
-    def _init_(self):
+    def __init__(self):
         self.children = {}
         self.is_end = False
 
 class Trie:
     '''Stores known fraud patterns as prefixes for quick search.
     Time Complexity: insert() = O(m), search() = O(m)'''
-    def _init_(self):
+    def __init__(self):
         self.root = TrieNode()
 
     def insert(self, sequence):
@@ -78,7 +99,7 @@ class Trie:
 class UserProfile:
     '''Represents a user and their transaction history.
     Uses deque for recent activity (O(1) append/pop) and binary search for percentile calculation.'''
-    def _init_(self, user_id, name="", email="", phone="", address="", age=0):
+    def __init__(self, user_id, name="", email="", phone="", address="", age=0):
         self.user_id = user_id
         self.name = name
         self.email = email
@@ -124,49 +145,79 @@ class UserProfile:
         Time Complexity: O(1)'''
         if len(self.transaction_times) < 2:
             return 0
+        
+        # Get last 10 transactions
         recent = list(self.transaction_times)[-10:]
         if len(recent) < 2:
             return 0
-        hours = (recent[-1] - recent[0]) / 3600
-        return len(recent) / hours if hours > 0 else float('inf')
+        
+        # Calculate time span in hours
+        time_difference = recent[-1] - recent[0]
+        hours = time_difference / 3600
+        
+        if hours > 0:
+            return len(recent) / hours
+        else:
+            return float('inf')
 
     def get_amount_deviation_score(self):
-        
         '''Measures how much the latest transaction deviates statistically.
         Time Complexity: O(n)'''
         if len(self.transaction_amounts) < 5:
             return 0
+        
         amounts = list(self.transaction_amounts)
-        avg = sum(amounts) / len(amounts)
-        variance = sum((x - avg) ** 2 for x in amounts) / len(amounts)
+        
+        # Calculate average
+        total = 0
+        for amount in amounts:
+            total += amount
+        avg = total / len(amounts)
+        
+        # Calculate variance
+        variance_sum = 0
+        for amount in amounts:
+            difference = amount - avg
+            squared_difference = difference ** 2
+            variance_sum += squared_difference
+        variance = variance_sum / len(amounts)
+        
+        # Calculate standard deviation
         std = variance ** 0.5
-        return abs(amounts[-1] - avg) / std if std else 0
+        
+        # Calculate deviation of latest transaction
+        latest_amount = amounts[-1]
+        deviation = abs(latest_amount - avg)
+        
+        if std > 0:
+            return deviation / std
+        else:
+            return 0
 
     def record_risk(self, score):
-        '''
-        Inserts risk score in sorted order for percentile ranking.
-        Time Complexity: O(log n) '''
+        '''Inserts risk score in sorted order for percentile ranking.
+        Time Complexity: O(log n)'''
         bisect.insort(self.risk_history, score)
 
     def get_percentile_rank(self, score):
-        
         '''Finds percentile rank of a score using binary search.
         Time Complexity: O(log n)'''
         if not self.risk_history:
             return 0
-        pos = bisect.bisect_left(self.risk_history, score)
-        return (pos / len(self.risk_history)) * 100
+        
+        position = bisect.bisect_left(self.risk_history, score)
+        percentile = (position / len(self.risk_history)) * 100
+        return percentile
 
 # --- MAIN SYSTEM (Integrating All DSA Components) ---
 class InteractiveFraudDetectionSystem:
-    '''
-    The core fraud detection engine demonstrating:
+    '''The core fraud detection engine demonstrating:
     - Hash Tables for user lookup
     - Trie + Bloom Filter for pattern detection
     - Heap for high-risk tracking
     - Graph for transaction network
     - Queue for review management'''
-    def _init_(self, window_size=5, bloom_size=1000):
+    def __init__(self, window_size=5, bloom_size=1000):
         # --- Core DSA Structures ---
         self.user_profiles = {}                     # Hash Table (O(1))
         self.recent_transactions = deque(maxlen=window_size)
@@ -191,40 +242,46 @@ class InteractiveFraudDetectionSystem:
     # -------------------------- Utility Methods --------------------------
 
     def log_transaction(self, user_id, amount, location, tx_type):
-        '''
-        Hash-based duplicate transaction check.
+        '''Hash-based duplicate transaction check.
         Time Complexity: O(1)'''
-        tx_hash = hashlib.sha256(f"{amount}{location}{tx_type}".encode()).hexdigest()
+        # Create unique hash for transaction
+        transaction_string = f"{amount}{location}{tx_type}"
+        encoded_transaction = transaction_string.encode()
+        hash_object = hashlib.sha256(encoded_transaction)
+        tx_hash = hash_object.hexdigest()
+        
+        # Check if this transaction hash exists for this user
         if tx_hash in self.transaction_log[user_id]:
-            print(" Duplicate transaction detected!")
+            print("⚠️ Duplicate transaction detected!")
         else:
             self.transaction_log[user_id].append(tx_hash)
 
     def record_transfer(self, sender_id, receiver_id):
-        '''
-        Records money transfer as directed graph edge.
+        '''Records money transfer as directed graph edge.
         Time Complexity: O(1)'''
         self.transaction_graph[sender_id].append(receiver_id)
 
     def update_risk_heap(self, user):
-        '''
-        Push user into max-heap by fraud score.
+        '''Push user into max-heap by fraud score.
         Time Complexity: O(log n)'''
-        heapq.heappush(self.high_risk_heap, (-user.fraud_score, user.user_id))
+        # Use negative score for max-heap behavior
+        heap_entry = (-user.fraud_score, user.user_id)
+        heapq.heappush(self.high_risk_heap, heap_entry)
+        
+        # Keep only top 10 risky users
         if len(self.high_risk_heap) > 10:
             heapq.heappop(self.high_risk_heap)
 
     def add_to_review_queue(self, user):
-        '''
-        Adds flagged user to review queue (FIFO).
+        '''Adds flagged user to review queue (FIFO).
         Time Complexity: O(1)'''
         if user.is_flagged:
             self.review_queue.append(user.user_id)
-            print(f"🕵 Added {user.user_id} to review queue.")
+            print(f"🕵️ Added {user.user_id} to review queue.")
+    
     # -------------------------- Fraud Detection Logic --------------------------
     def create_user(self):
-        '''
-        Creates new user profile (Hash Table Insert)
+        '''Creates new user profile (Hash Table Insert)
         Time Complexity: O(1)'''
         print("\n--- Enter User Details ---")
 
@@ -275,11 +332,11 @@ class InteractiveFraudDetectionSystem:
                 print("Please enter a valid 10-digit phone number.")
 
         if user_id in self.user_profiles:
-            print("User already exists.")
+            print("⚠️ User already exists.")
             return user_id
 
         self.user_profiles[user_id] = UserProfile(user_id, name, email, phone, address, age)
-        print(f"Created profile for {name} ({user_id})")
+        print(f"✅ Created profile for {name} ({user_id})")
         return user_id
 
     def process_transaction(self, user_id):
@@ -296,14 +353,23 @@ class InteractiveFraudDetectionSystem:
 
         user.add_transaction(amount, location, tx_type)
         self.log_transaction(user_id, amount, location, tx_type)
-        code = f"{tx_type[0]}{int(amount // 1000)}"
+        
+        # Create transaction code (first letter + amount in thousands)
+        amount_in_thousands = int(amount // 1000)
+        code = f"{tx_type[0]}{amount_in_thousands}"
         self.recent_transactions.append(code)
+        
         result = self.check_fraud(user, code)
 
         print("\n=== FRAUD ANALYSIS ===")
         print(f"User: {user.name}")
         print(f"Transaction: ${amount} in {location} [{tx_type}]")
-        print(f"Result: {' FRAUD' if result['is_fraud'] else ' SAFE'}")
+        
+        if result['is_fraud']:
+            print(f"Result: 🚨 FRAUD")
+        else:
+            print(f"Result: ✅ SAFE")
+        
         print(f"Risk Score: {result['risk_score']:.3f}")
         print(f"Velocity: {result['velocity_score']:.2f}, Deviation: {result['amount_deviation']:.2f}")
 
@@ -315,30 +381,63 @@ class InteractiveFraudDetectionSystem:
         '''Core fraud detection algorithm using Bloom Filter, Trie, and scoring.
         Time Complexity: O(k + m + n) → hash checks + pattern match + deviation calc'''
         is_pattern_fraud = False
-        flag_reason = " "
+        flag_reason = ""
 
-        # Pattern analysis
+        # Pattern analysis - check last 3 transactions
         if len(self.recent_transactions) >= 3:
-            pattern_seq = "".join(list(self.recent_transactions)[-3:])
-            if self.fraud_bloom.check(pattern_seq) and self.fraud_trie.search(pattern_seq):
+            # Get last 3 transaction codes
+            last_three = list(self.recent_transactions)[-3:]
+            pattern_seq = "".join(last_three)
+            
+            # Check if pattern is fraudulent
+            bloom_check = self.fraud_bloom.check(pattern_seq)
+            trie_check = self.fraud_trie.search(pattern_seq)
+            
+            if bloom_check and trie_check:
                 is_pattern_fraud = True
                 flag_reason = f"Known fraud pattern: {pattern_seq}"
 
+        # Calculate risk scores
         velocity = user.get_velocity_score()
         deviation = user.get_amount_deviation_score()
 
-        age_risk = 0.8 if user.account_age_days < 1 else 0.3
-        large_tx = 0.7 if user.transaction_amounts[-1] > 10000 else 0.2
+        # Age-based risk
+        if user.account_age_days < 1:
+            age_risk = 0.8
+        else:
+            age_risk = 0.3
 
-        v_risk = min(velocity / self.VELOCITY_THRESHOLD, 1.0)
-        d_risk = min(deviation / self.AMOUNT_DEVIATION_THRESHOLD, 1.0)
+        # Large transaction risk
+        latest_amount = user.transaction_amounts[-1]
+        if latest_amount > 10000:
+            large_tx = 0.7
+        else:
+            large_tx = 0.2
 
-        risk_score = 0.25*v_risk + 0.2*d_risk + 0.25*age_risk + 0.3*large_tx
-        is_fraud = is_pattern_fraud or risk_score > self.FRAUD_SCORE_THRESHOLD
+        # Normalize velocity and deviation risks
+        v_risk = velocity / self.VELOCITY_THRESHOLD
+        if v_risk > 1.0:
+            v_risk = 1.0
+        
+        d_risk = deviation / self.AMOUNT_DEVIATION_THRESHOLD
+        if d_risk > 1.0:
+            d_risk = 1.0
 
+        # Calculate composite risk score (weighted average)
+        risk_score = (0.25 * v_risk) + (0.2 * d_risk) + (0.25 * age_risk) + (0.3 * large_tx)
+        
+        # Determine if transaction is fraudulent
+        is_fraud = is_pattern_fraud or (risk_score > self.FRAUD_SCORE_THRESHOLD)
+
+        # Update user fraud status
         user.is_flagged = is_fraud
         user.fraud_score = risk_score
-        user.flag_reason = flag_reason or f"High risk score: {risk_score:.2f}"
+        
+        if flag_reason:
+            user.flag_reason = flag_reason
+        else:
+            user.flag_reason = f"High risk score: {risk_score:.2f}"
+        
         return {
             'is_fraud': is_fraud,
             'risk_score': risk_score,
@@ -348,36 +447,35 @@ class InteractiveFraudDetectionSystem:
 
     # -------------------------- Visualization & Review --------------------------
     def show_top_risky_users(self):
-        '''
-        Displays top risky users from heap.
-        Time Complexity: O(n log n)
-        '''
+        '''Displays top risky users from heap.
+        Time Complexity: O(n log n)'''
         print("\n=== Top Risky Users ===")
-        for score, uid in sorted(self.high_risk_heap, reverse=True):
-            print(f"User ID: {uid}, Fraud Score: {-score:.3f}")
+        sorted_users = sorted(self.high_risk_heap, reverse=True)
+        
+        for score, uid in sorted_users:
+            actual_score = -score  # Convert back from negative
+            print(f"User ID: {uid}, Fraud Score: {actual_score:.3f}")
 
     def show_transaction_network(self):
-        '''
-        Displays user-to-user transaction graph.
-        Time Complexity: O(V + E)
-        '''
+        '''Displays user-to-user transaction graph.
+        Time Complexity: O(V + E)'''
         print("\n=== Transaction Network Graph ===")
         for user, connections in self.transaction_graph.items():
             print(f"{user} → {connections}")
 
     def process_review_queue(self):
-        '''
-        FIFO fraud case processing using queue.
-        Time Complexity: O(n)
-        '''
+        '''FIFO fraud case processing using queue.
+        Time Complexity: O(n)'''
         print("\n=== Review Queue ===")
         while self.review_queue:
             uid = self.review_queue.popleft()
-            print(f"🔎 Reviewing {uid}... done ")
+            print(f"🔎 Reviewing {uid}... done ✓")
+
 # -------------------------- Main Menu --------------------------
 def main():
     print("\n=== FRAUD DETECTION SYSTEM (DSA Edition) ===")
     system = InteractiveFraudDetectionSystem()
+    
     while True:
         print("\nMenu:")
         print("1. Create new user")
@@ -386,16 +484,18 @@ def main():
         print("4. Show transaction network")
         print("5. Review fraud queue")
         print("6. Exit")
+        
         choice = input("Select (1-6): ").strip()
+        
         if choice == "1":
             system.create_user()
         elif choice == "2":
             if not system.user_profiles:
-                print(" No users found. Create one first!")
+                print("⚠️ No users found. Create one first!")
                 continue
             uid = input("Enter User ID: ").strip()
             if uid not in system.user_profiles:
-                print("Invalid User ID!")
+                print("❌ Invalid User ID!")
                 continue
             system.process_transaction(uid)
         elif choice == "3":
@@ -405,9 +505,10 @@ def main():
         elif choice == "5":
             system.process_review_queue()
         elif choice == "6":
-            print(" Exiting system.")
+            print("Exiting system.")
             break
         else:
             print("Invalid option.")
-if __name__ == "_main_":
+
+if __name__ == "__main__":
     main()
